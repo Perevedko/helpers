@@ -23,6 +23,7 @@ from datetime import date
 
 import pandas as pd
 import requests
+import json
 
 
 ALLOWED_DOMAINS = (
@@ -261,7 +262,7 @@ if __name__ == "__main__":
         df = pd.DataFrame(dicts)
         df.date = df.date.apply(pd.to_datetime)
         df = df.pivot(index='date', values='value', columns='name')
-        return df.to_json()
+        return df.to_json(orient='split')
     
        
     df = pd.DataFrame(data)
@@ -276,7 +277,7 @@ if __name__ == "__main__":
     # ERROR: something goes wrong with date handling
     #        if we use df.to_json(), we shoudl be able to read it with pd.read_json()
     f = io.StringIO(to_json(dicts=data))
-    df2 = pd.read_json(f)        
+    df2 = pd.read_json(f, orient='split', precise_float=True)
     assert df.equals(df2)
         
  
