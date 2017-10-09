@@ -23,6 +23,7 @@ from datetime import date
 
 import pandas as pd
 import requests
+import json
 
 
 ALLOWED_DOMAINS = (
@@ -277,17 +278,23 @@ if __name__ == "__main__":
     
     # ERROR: something goes wrong with date handling
     #        if we use df.to_json(), we shoudl be able to read it with pd.read_json()
+
     data2 = to_json(dicts=data)
     f = io.StringIO(data2)
     df2 = pd.read_json(f)        
     
     # COMMENT: there are two sources of an error 
+    #
     #           - one is rounding error and this is a smaller evil
-    #           - the other is order of rows in df2
+    #             precise_float=True and np.close come to help
+    #
+    #           - the other is order of rows in df2 - this is a bigger problem
+    #
     #             with default orent='columns' we cannot gaurantee the 
     #             order of rows, unless a) we sort the rows on client side,
     #             b) we change orient to something different, like 'split',
     #             both on server and client side 
+    #
     df2 = df2.sort_index()
     assert np.isclose(df, df2).all()
     
@@ -301,4 +308,7 @@ if __name__ == "__main__":
     
     # I slightly favour 2) because htis way we will hvae one format less, even
     # though it is slightly londer on client side. What is your opinion?
+    f = io.StringIO(to_json(dicts=data))
+    df2 = pd.read_json(f, orient='split', precise_float=True)
+    assert df.equals(df2)        
  
