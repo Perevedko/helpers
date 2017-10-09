@@ -263,6 +263,12 @@ if __name__ == "__main__":
         df.date = df.date.apply(pd.to_datetime)
         df = df.pivot(index='date', values='value', columns='name')
         return df.to_json(orient='split')
+
+    def to_csv(dicts):
+        df = pd.DataFrame(dicts)
+        df.date = df.date.apply(pd.to_datetime)
+        df = df.pivot(index='date', values='value', columns='name')
+        return df.to_csv()
     
        
     df = pd.DataFrame(data)
@@ -274,10 +280,11 @@ if __name__ == "__main__":
     assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
     
     
-    # ERROR: something goes wrong with date handling
-    #        if we use df.to_json(), we shoudl be able to read it with pd.read_json()
     f = io.StringIO(to_json(dicts=data))
     df2 = pd.read_json(f, orient='split', precise_float=True)
     assert df.equals(df2)
-        
+
+    data_csv = io.StringIO(to_csv(data))
+    df_csv = pd.read_csv(data_csv, converters={0: pd.to_datetime}, index_col=0, float_precision='high')
+    assert df.equals(df_csv)
  
