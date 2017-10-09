@@ -161,6 +161,8 @@ if __name__ == "__main__":
     
     from pprint import pprint
     import io
+    import numpy as np
+
 
     # valid urls 
     'api/oil/series/BRENT/m/eop/2015/2017/csv' # will fail of db GET call
@@ -261,13 +263,13 @@ if __name__ == "__main__":
         df = pd.DataFrame(dicts)
         df.date = df.date.apply(pd.to_datetime)
         df = df.pivot(index='date', values='value', columns='name')
-        return df.to_json()
+        return df.to_json(orient='columns')
     
        
     df = pd.DataFrame(data)
     df.date = df.date.apply(pd.to_datetime)
-    #df is poper
     df = df.pivot(index='date', values='value', columns='name')
+    df = df.sort_index()
     
     assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
     assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
@@ -278,6 +280,25 @@ if __name__ == "__main__":
     data2 = to_json(dicts=data)
     f = io.StringIO(data2)
     df2 = pd.read_json(f)        
-    assert df.equals(df2)
-        
+    
+    # COMMENT: there are two sources of an error 
+    #           - one is rounding error and this is a smaller evil
+    #           - the other is order of rows in df2
+    #             with default orent='columns' we cannot gaurantee the 
+    #             order of rows, unless a) we sort the rows on client side,
+    #             b) we change orient to something different, like 'split',
+    #             both on server and client side 
+    df2 = df2.sort_index()
+    assert np.isclose(df, df2).all()
+    
+    # QUESTION:
+    # the original intent was to provide user with no-parameter import
+    # soultion like pd.read_json('<long url>'), this does not seem to be able to work
+    
+    # options: 
+    # 1) pd.import_json('<long url>', orient='split')
+    # 2) pd.read_csv('<long url>', converters={0: pd.to_datetime}, index_col=0)
+    
+    # I slightly favour 2) because htis way we will hvae one format less, even
+    # though it is slightly londer on client side. What is your opinion?
  
