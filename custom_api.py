@@ -280,10 +280,6 @@ if __name__ == "__main__":
     
     assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
     assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
-    
-    f = io.StringIO(to_json(dicts=data))
-    df2 = pd.read_json(f, orient='split', precise_float=True)
-    assert df.equals(df2)
 
     # ERROR: something goes wrong with date handling
     #        if we use df.to_json(), we shoudl be able to read it with pd.read_json()
