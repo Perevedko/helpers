@@ -1,37 +1,55 @@
-"""Decompose time series API URL.
+"""Decompose custom URL.
 
-URL format:
-    
+    URL format (? marks optional parameter):
+        
     {domain}/series/{varname}/{freq}/{?suffix}/{?start}/{?end}/{?finaliser}
     
-Rule1:
-    {?suffix} is translated to unit in a simple version (v1)              
-    
-Rule2:
-    in a v2 version: 
-        {?suffix} is {?rate} or {?agg} they are mutually exclusive:
-            if {?suffix} is in (eop, avg) then {agg} is defined
-            if {?suffix} is in (yoy, rog, base) then {rate} is defined
-            {unit} name must be defined 
+    Examples:
+        oil/series/BRENT/m/eop/2015/2017/csv
+        ru/series/EXPORT_GOODS/m/bln_rub
+        
+    Tokens:         
+        {domain} is reserved, future use: 'all', 'ru', 'oil', 'ru:bank', 'ru:77'
+        
+        {varname} is GDP, GOODS_EXPORT, BRENT (capital letters with underscores)
+        
+        {freq} is any of:
+            a (annual)
+            q (quarterly)
+            m (monthly)
+            w (weekly)
+            d (daily)
+        
+        {?suffix} may be: 
             
-To integrate here:    
-    <https://github.com/mini-kep/frontend-app/blob/master/apps/views/time_series.py>    
+            unit of measurement (unit):
+                example: bln_rub, bln_usd, tkm
+                
+            rate of change for real variable (rate):
+                rog - change to previous period
+                yoy - change to year ago
+                base - base index
+                
+            aggregation command (agg): 
+                eop - end of period
+                avg - average
+               
+    To integrate here:    
+        <https://github.com/mini-kep/frontend-app/blob/master/apps/views/time_series.py>    
 
+Decomposition procedure involves:
+    
+    CustomGET class
+    InnerPath class
+    to_csv()
+    
 """
 
 from datetime import date
 
 import pandas as pd
 import requests
-import json
 
-
-ALLOWED_DOMAINS = (
-    'ru',
-    'oil',
-    'all',
-    # more domains?
-)
 
 ALLOWED_FREQUENCIES = 'dwmqa'
 
@@ -45,11 +63,10 @@ ALLOWED_AGGREGATORS = (
     'avg'
 )
 ALLOWED_FINALISERS = (
-    'info',
-    'csv',
-    'list', # default 
-    'pandas',  
-    'xlsx'
+    'info',  # resereved - retrun json with variable and url description 
+    'csv',   # to implement: return csv (default) 
+    'json',  # to implement: return list of dictionaries
+    'xlsx'   # resereved - return Excel file
 )
 
 class InnerPath:   
@@ -62,16 +79,16 @@ class InnerPath:
         """        
         # *tokens* is a list of non-empty strings
         tokens = [token.strip() for token in inner_path.split('/') if token]        
-        # date parameters
+        # 1. extract dates, if any
         self.dict = self.assign_dates(tokens)
-        # finaliser
+        # 2. find finaliser, if any
         self.dict['fin']  = self.assign_values(tokens, ALLOWED_FINALISERS)
-        # transforms
+        # 3. find transforms, if any
         self.dict['rate'] = self.assign_values(tokens, ALLOWED_REAL_RATES)
         self.dict['agg']  = self.assign_values(tokens, ALLOWED_AGGREGATORS)
         if self.dict['rate'] and self.dict['agg']:
             raise ValueError("Cannot combine rate and aggregation.")
-        # unit name
+        # 4. find unit name, if present
         if tokens:
             self.dict['unit'] = tokens[0]
         else:
@@ -80,9 +97,9 @@ class InnerPath:
     def get_dict(self):
         return self.dict
 
-    def assign_dates(self, tokens):
-        result = {}
+    def assign_dates(self, tokens):        
         start_year, end_year = self.get_years(tokens)
+        result = {}
         result['start_date'] = self.as_date(start_year, month=1, day=1)
         result['end_date'] = self.as_date(end_year, month=12, day=31)  
         return result 
@@ -98,7 +115,9 @@ class InnerPath:
 
     @staticmethod
     def get_years(tokens):
-        """Extract years from a list of *tokens* strings."""
+        """Extract years from a list of *tokens* strings.
+           Pops values found away from *tokens*.
+        """
         start, end = None, None
         integers = [x for x in tokens if x.isdigit()]
         if len(integers) in (1, 2):
@@ -111,55 +130,54 @@ class InnerPath:
 
     @staticmethod
     def assign_values(tokens, allowed_values):
-        """Find entries of *allowed_values* into *tokens*."""
+        """Find entries of *allowed_values* into *tokens*.
+           Pops values found away from *tokens*.
+        """
         values_found = [p for p in allowed_values if p in tokens]
         if not values_found:
             return None
         elif len(values_found) == 1:
             x = values_found[0]
             tokens.pop(tokens.index(x))
-            return x
-            
+            return x            
         else:
             raise ValueError(values_found)
 
-def get_freq(freq: str):
-    if freq not in ALLOWED_FREQUENCIES:
-        raise ValueError(f"Frequency <{freq}> is not valid")
-    return freq
-
-def mimic_custom_api(path: str):
-    """Decode path like: 
+class CustomGET:
     
-       api/oil/series/BRENT/m/eop/2015/2017/csv
-index    0   1      2     3 4   5 .... 
-       
-    """
-    assert path.startswith('api/')
-    tokens = [token.strip() for token in path.split('/') if token]
-    # mandatoy part - in actual code taken care by flask
-    ctx = dict(domain=tokens[1],
-               varname=tokens[3],
-               freq=get_freq(tokens[4]))
-    # optional part
-    if len(tokens) >= 6:
-        inner_path_str = "/".join(tokens[5:])
-        d = InnerPath(inner_path_str).get_dict()        
-        ctx.update(d)
-    return ctx
+    @staticmethod
+    def make_freq(freq: str):
+        if freq not in ALLOWED_FREQUENCIES:
+            raise ValueError(f'Frequency <{freq}> is not valid')
+        return freq           
+    
+    @staticmethod
+    def make_name(varname, unit):
+        name = varname
+        if unit:
+            name = f'{name}_{unit}'
+        return name
 
-def make_db_api_get_call_parameters(path):
-    ctx = mimic_custom_api(path)
-    name, unit = (ctx[key] for key in ['varname', 'unit'])
-    if unit:
-        name = f"{name}_{unit}"
-    params = dict(name=name,  freq=ctx['freq'])
-    upd = [(key, ctx[key]) for key in ['start_date', 'end_date'] if ctx[key]]
-    params.update(upd)
-    return params       
+    @staticmethod
+    def make_dates(ip: dict):
+        return {key:ip[key] for key in ['start_date', 'end_date'] if ip[key]}           
+    
+    def __init__(self, domain, varname, freq, inner_path):
+        ip = InnerPath(inner_path).get_dict()        
+        self.params = dict(name=self.make_name(varname, ip['unit']),
+                           freq=self.make_freq(freq))
+        self.params.update(self.make_dates(ip))
+        
+    def get_csv(self):
+        endpoint = 'http://minikep-db.herokuapp.com/api/datapoints'
+        r = requests.get(endpoint, params=self.params)            
+        if r.status_code == 200:
+            data = r.json()
+            return to_csv(data)            
+        else:
+            raise ValueError
 
-# serialiser
-
+# serialiser fucntion 
 def yield_csv_row(dicts):
     """
     Arg: 
@@ -188,9 +206,39 @@ if __name__ == "__main__":
     from pprint import pprint
     import io
     import numpy as np
+    
+    def mimic_custom_api(path: str):
+        """Decode path like: 
+        
+           api/oil/series/BRENT/m/eop/2015/2017/csv
+    index    0   1      2     3 4   5 .... 
+           
+        """
+        assert path.startswith('api/')
+        tokens = [token.strip() for token in path.split('/') if token]
+        # mandatoy part - in actual code taken care by flask
+        ctx = dict(domain=tokens[1],
+                   varname=tokens[3],
+                   freq=tokens[4])
+        # optional part
+        if len(tokens) >= 6:
+            inner_path_str = "/".join(tokens[5:])
+            d = InnerPath(inner_path_str).get_dict()        
+            ctx.update(d)
+        return ctx
+    
+    def make_db_api_get_call_parameters(path):
+        ctx = mimic_custom_api(path)
+        name, unit = (ctx[key] for key in ['varname', 'unit'])
+        if unit:
+            name = f"{name}_{unit}"
+        params = dict(name=name,  freq=ctx['freq'])
+        upd = [(key, ctx[key]) for key in ['start_date', 'end_date'] if ctx[key]]
+        params.update(upd)
+        return params  
 
 
-    # valid urls 
+    # valid inner urls 
     'api/oil/series/BRENT/m/eop/2015/2017/csv' # will fail of db GET call
     'api/ru/series/EXPORT_GOODS/m/bln_rub' # will pass
     'api/ru/series/USDRUR_CB/d/xlsx' # will fail
@@ -348,10 +396,10 @@ if __name__ == "__main__":
     # 1) pd.import_json('<long url>', orient='split')
     # 2) pd.read_csv('<long url>', converters={0: pd.to_datetime}, index_col=0)
     
-    # I slightly favour 2) because htis way we will hvae one format less, even
-    # though it is slightly londer on client side. What is your opinion?     
+    # EP: I favour 2) because we will have less formats, even
+    # though it is slightly longer on client side. 
 
-    # recommended serialisation
+    # EP: recommended serialisation
     serialised = to_csv(data)
     f = io.StringIO(serialised)
     df_csv = pd.read_csv(f, converters={0: pd.to_datetime}, index_col=0)
