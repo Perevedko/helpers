@@ -158,8 +158,33 @@ def make_db_api_get_call_parameters(path):
     params.update(upd)
     return params       
 
+# serialiser
+
+def yield_csv_row(dicts):
+    """
+    Arg: 
+       dicts - list of dictionaries like 
+               {'date': '1992-07-01', 'freq': 'd', 'name': 'USDRUR_CB', 'value': 0.1253}
+       
+    Returns:
+       string like ',USDRUR_CB\n1992-07-01,0.1253\n'           
+       
+    """
+    datapoints = list(dicts)
+    name = datapoints[0]['name']
+    yield ',{}'.format(name)
+    for d in datapoints:
+        yield '{},{}'.format(d['date'], d['value'])
+    # this yield is responsible for last \n in csv     
+    yield ''
+        
+def to_csv(dicts):
+    rows = list(yield_csv_row(dicts)) 
+    return '\n'.join(rows)
+
+
 if __name__ == "__main__":
-    
+    import pytest
     from pprint import pprint
     import io
     import numpy as np
@@ -257,37 +282,52 @@ if __name__ == "__main__":
     assert control_datapoint_1 in data
     assert control_datapoint_2 in data
     
-    # TODO: need 'pandas' formatting parameter or another database endpoint to be able
-    # to use pd.read_json(<long url>)
-    
-    def to_json(dicts):    
-        df = pd.DataFrame(dicts)
-        df.date = df.date.apply(pd.to_datetime)
-        df = df.pivot(index='date', values='value', columns='name')
-        return df.to_json(orient='split')
-
-    def to_csv(dicts):
-        df = pd.DataFrame(dicts)
-        df.date = df.date.apply(pd.to_datetime)
-        df = df.pivot(index='date', values='value', columns='name')
-        return df.to_csv()
-
-       
+    # reference dataframe
     df = pd.DataFrame(data)
     df.date = df.date.apply(pd.to_datetime)
     df = df.pivot(index='date', values='value', columns='name')
+    df.index.name = None
     df = df.sort_index()
     
     assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
-    assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
+    assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']    
+    
+    # serialisation issues 
+    
+    def to_json(dicts, orient='columns'):    
+        df = pd.DataFrame(dicts)
+        df.date = df.date.apply(pd.to_datetime)
+        df = df.pivot(index='date', values='value', columns='name')
+        df.index.name = None
+        return df.to_json(orient=orient)
+
+    def to_csv_df(dicts):
+        df = pd.DataFrame(dicts)
+        df.date = df.date.apply(pd.to_datetime)
+        df = df.pivot(index='date', values='value', columns='name')
+        df.index.name = None
+        return df.to_csv()
 
     # ERROR: something goes wrong with date handling
-    #        if we use df.to_json(), we shoudl be able to read it with pd.read_json()
-
-    # data2 = to_json(dicts=data)
-    # f = io.StringIO(data2)
-    # df2 = pd.read_json(f)
+    serialised = to_json(dicts=data)
+    f = io.StringIO(serialised)
+    df2 = pd.read_json(f)    
+    with pytest.raises(AssertionError):
+        assert df.equals(df2) 
     
+    # solution 1: split + precise_float=True (@Perevedko)
+    serialised = to_json(dicts=data, orient='split')
+    f = io.StringIO(serialised)
+    df2 = pd.read_json(f, orient='split', precise_float=True)    
+    assert df.equals(df2)   
+    
+    # solution 2: sort index + different comparison func (@zarak)
+    serialised = to_json(dicts=data, orient='columns')
+    f = io.StringIO(serialised)
+    df3 = pd.read_json(f) 
+    df3 = df3.sort_index()
+    assert np.isclose(df, df3).all()
+
     # COMMENT: there are two sources of an error 
     #
     #           - one is rounding error and this is a smaller evil
@@ -298,10 +338,7 @@ if __name__ == "__main__":
     #             with default orent='columns' we cannot gaurantee the 
     #             order of rows, unless a) we sort the rows on client side,
     #             b) we change orient to something different, like 'split',
-    #             both on server and client side 
-    #
-    # df2 = df2.sort_index()
-    # assert np.isclose(df, df2).all()
+    #             both on server and client side     
     
     # QUESTION:
     # the original intent was to provide user with no-parameter import
@@ -312,13 +349,11 @@ if __name__ == "__main__":
     # 2) pd.read_csv('<long url>', converters={0: pd.to_datetime}, index_col=0)
     
     # I slightly favour 2) because htis way we will hvae one format less, even
-    # though it is slightly londer on client side. What is your opinion?
-    f = io.StringIO(to_json(dicts=data))
-    df2 = pd.read_json(f, orient='split', precise_float=True)
-    assert df.equals(df2)
+    # though it is slightly londer on client side. What is your opinion?     
 
-    data_csv = io.StringIO(to_csv(data))
-    df_csv = pd.read_csv(data_csv, converters={0: pd.to_datetime}, index_col=0, float_precision='high')
-    assert df.equals(df_csv)
-
+    # recommended serialisation
+    serialised = to_csv(data)
+    f = io.StringIO(serialised)
+    df_csv = pd.read_csv(f, converters={0: pd.to_datetime}, index_col=0)
+    assert np.isclose(df, df3).all()
  
