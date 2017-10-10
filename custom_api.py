@@ -48,10 +48,6 @@ Decomposition procedure involves:
 from datetime import date
 import pandas as pd
 import requests
-import pytest
-from pprint import pprint
-import io
-import numpy as np
 
 
 ALLOWED_FREQUENCIES = 'dwmqa'

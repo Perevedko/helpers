@@ -1,4 +1,8 @@
 import pytest
+from pprint import pprint
+import io
+import numpy as np
+import requests
 from custom_api import *
 
 # valid inner urls
