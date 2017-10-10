@@ -224,47 +224,213 @@ def to_csv(dicts):
     else:
         return ''
 
-def mimic_custom_api(path: str):
-    """Decode path like:
 
-       api/oil/series/BRENT/m/eop/2015/2017/csv
-index    0   1      2     3 4   5 ....
+if __name__ == "__main__":
+    def mimic_custom_api(path: str):
+        """Decode path like: 
+        
+           api/oil/series/BRENT/m/eop/2015/2017/csv
+    index    0   1      2     3 4   5 .... 
+           
+        """
+        assert path.startswith('api/')
+        tokens = [token.strip() for token in path.split('/') if token]
+        # mandatoy part - in actual code taken care by flask
+        ctx = dict(domain=tokens[1],
+                   varname=tokens[3],
+                   freq=tokens[4])
+        # optional part
+        if len(tokens) >= 6:
+            inner_path_str = "/".join(tokens[5:])
+            d = InnerPath(inner_path_str).get_dict()        
+            ctx.update(d)
+        return ctx
+    
+    def make_db_api_get_call_parameters(path):
+        ctx = mimic_custom_api(path)
+        name, unit = (ctx[key] for key in ['varname', 'unit'])
+        if unit:
+            name = f"{name}_{unit}"
+        params = dict(name=name,  freq=ctx['freq'])
+        upd = [(key, ctx[key]) for key in ['start_date', 'end_date'] if ctx[key]]
+        params.update(upd)
+        return params  
 
-    """
-    assert path.startswith('api/')
-    tokens = [token.strip() for token in path.split('/') if token]
-    # mandatoy part - in actual code taken care by flask
-    ctx = dict(domain=tokens[1],
-               varname=tokens[3],
-               freq=tokens[4])
-    # optional part
-    if len(tokens) >= 6:
-        inner_path_str = "/".join(tokens[5:])
-        d = InnerPath(inner_path_str).get_dict()
-        ctx.update(d)
-    return ctx
 
-def make_db_api_get_call_parameters(path):
-    ctx = mimic_custom_api(path)
-    name, unit = (ctx[key] for key in ['varname', 'unit'])
-    if unit:
-        name = f"{name}_{unit}"
-    params = dict(name=name, freq=ctx['freq'])
-    upd = [(key, ctx[key]) for key in ['start_date', 'end_date'] if ctx[key]]
-    params.update(upd)
-    return params
+    # valid inner urls 
+    'api/oil/series/BRENT/m/eop/2015/2017/csv' # will fail of db GET call
+    'api/ru/series/EXPORT_GOODS/m/bln_rub' # will pass
+    'api/ru/series/USDRUR_CB/d/xlsx' # will fail
+    
+    # FIXME: test for failures
+    # invalid urls
+    'api/oil/series/BRENT/q/rog/eop'
+    'api/oil/series/BRENT/z/'
+    
+    test_pairs = {
+        'api/oil/series/BRENT/m/eop/2015/2017/csv': {
+            'domain': 'oil',
+            'varname': 'BRENT',
+            'unit': None,
+            'freq': 'm',
+            'rate': None,
+            'start_date': '2015-01-01',
+            'end_date': '2017-12-31',
+            'agg': 'eop',
+            'fin': 'csv'
+        },
+        'api/ru/series/EXPORT_GOODS/m/bln_rub': {
+            'domain': 'ru',
+            'varname': 'EXPORT_GOODS',
+            'unit': 'bln_rub',            
+            'freq': 'm',
+            'rate': None,
+            'agg': None,
+            'fin': None,
+            'start_date': None,
+            'end_date': None
+        },
+                
+        'api/ru/series/USDRUR_CB/d/xlsx': {
+            'domain': 'ru',
+            'varname': 'USDRUR_CB',
+            'freq': 'd',
+            'unit': None,
+            'rate': None,
+            'agg': None,
+            'fin': 'xlsx',
+            'start_date': None,
+            'end_date': None
+        }
+                
+    }
+        
+    for url, d in test_pairs.items():
+        print()
+        print (url)
+        pprint(d)
+        assert mimic_custom_api(url) == d
+        print(make_db_api_get_call_parameters(url))
+        
+    test_pairs2 = {
+        'api/oil/series/BRENT/m/eop/2015/2017/csv': {
+                'name': 'BRENT', 
+                'freq': 'm', 
+                'start_date': '2015-01-01', 
+                'end_date': '2017-12-31'},
+                
+        'api/ru/series/EXPORT_GOODS/m/bln_rub': {
+                'name': 'EXPORT_GOODS_bln_rub', 
+                'freq': 'm'},
+                
+        'api/ru/series/USDRUR_CB/d/xlsx': {
+                'name': 'USDRUR_CB', 
+                'freq': 'd'}
+    }
+        
+    for url, d in test_pairs2.items():
+        assert make_db_api_get_call_parameters(url) == d
 
-
-def to_json(dicts, orient='columns'):
-    df = pd.DataFrame(dicts)
+    # get actual data from url 
+    # http://minikep-db.herokuapp.com/api/datapoints?name=USDRUR_CB&freq=d&start_date=2017-08-01&end_date=2017-10-01
+    
+    # using http, https fails loaclly
+    endpoint = 'http://minikep-db.herokuapp.com/api/datapoints'
+    
+    # cut out calls to API if in interpreter
+    try:
+        r
+    except NameError:    
+        r = requests.get(endpoint, params=d)            
+    assert r.status_code == 200
+    data = r.json()
+    control_datapoint_1 = {'date': '1992-07-01', 'freq': 'd', 'name': 'USDRUR_CB', 'value': 0.1253}
+    control_datapoint_2 = {'date': '2017-09-28', 'freq': 'd', 'name': 'USDRUR_CB', 'value': 58.0102}
+    assert control_datapoint_1 in data
+    assert control_datapoint_2 in data
+    
+    # reference dataframe
+    df = pd.DataFrame(data)
     df.date = df.date.apply(pd.to_datetime)
     df = df.pivot(index='date', values='value', columns='name')
     df.index.name = None
-    return df.to_json(orient=orient)
+    df = df.sort_index()
+    
+    assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
+    assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']    
+    
+    # serialisation issues 
+    
+    def to_json(dicts, orient='columns'):    
+        df = pd.DataFrame(dicts)
+        df.date = df.date.apply(pd.to_datetime)
+        df = df.pivot(index='date', values='value', columns='name')
+        df.index.name = None
+        return df.to_json(orient=orient)
 
-def to_csv_df(dicts):
-    df = pd.DataFrame(dicts)
-    df.date = df.date.apply(pd.to_datetime)
-    df = df.pivot(index='date', values='value', columns='name')
-    df.index.name = None
-    return df.to_csv()
+    def to_csv_df(dicts):
+        df = pd.DataFrame(dicts)
+        df.date = df.date.apply(pd.to_datetime)
+        df = df.pivot(index='date', values='value', columns='name')
+        df.index.name = None
+        return df.to_csv()
+
+    # ERROR: something goes wrong with date handling
+    serialised = to_json(dicts=data)
+    f = io.StringIO(serialised)
+    df2 = pd.read_json(f)    
+    with pytest.raises(AssertionError):
+        assert df.equals(df2) 
+    
+    # solution 1: split + precise_float=True (@Perevedko)
+    serialised = to_json(dicts=data, orient='split')
+    f = io.StringIO(serialised)
+    df2 = pd.read_json(f, orient='split', precise_float=True)    
+    assert df.equals(df2)   
+    
+    # solution 2: sort index + different comparison func (@zarak)
+    serialised = to_json(dicts=data, orient='columns')
+    f = io.StringIO(serialised)
+    df3 = pd.read_json(f) 
+    df3 = df3.sort_index()
+    assert np.isclose(df, df3).all()
+
+    # COMMENT: there are two sources of an error 
+    #
+    #           - one is rounding error and this is a smaller evil
+    #             precise_float=True and np.close come to help
+    #
+    #           - the other is order of rows in df2 - this is a bigger problem
+    #
+    #             with default orent='columns' we cannot gaurantee the 
+    #             order of rows, unless a) we sort the rows on client side,
+    #             b) we change orient to something different, like 'split',
+    #             both on server and client side     
+    
+    # QUESTION:
+    # the original intent was to provide user with no-parameter import
+    # soultion like pd.read_json('<long url>'), this does not seem to be able to work
+    
+    # options: 
+    # 1) pd.import_json('<long url>', orient='split')
+    # 2) pd.read_csv('<long url>', converters={0: pd.to_datetime}, index_col=0)
+    
+    # EP: I favour 2) because we will have less formats, even
+    # though it is slightly longer on client side. 
+
+    # EP: recommended serialisation
+    serialised = to_csv(data)
+    f = io.StringIO(serialised)
+    df_csv = pd.read_csv(f, converters={0: pd.to_datetime}, index_col=0)
+    assert np.isclose(df, df3).all()
+    
+    s = CustomGET('oil','BRENT', 'd', '2017').get_csv()
+    assert '2017-05-23,53.19\n' in s
+    
+    cg2 = CustomGET('all','ZZZ', 'd', '2017')
+    assert len(cg2.get_csv()) == 0
+    
+    assert CustomGET.make_freq('a')
+    with pytest.raises(InvalidUsage):
+        CustomGET.make_freq('z')
+ 
