@@ -197,8 +197,11 @@ def yield_csv_row(dicts):
     yield ''
         
 def to_csv(dicts):
-    rows = list(yield_csv_row(dicts)) 
-    return '\n'.join(rows)
+    if dicts: 
+        rows = list(yield_csv_row(dicts)) 
+        return '\n'.join(rows)
+    else:
+        return ''
 
 
 if __name__ == "__main__":
@@ -404,4 +407,10 @@ if __name__ == "__main__":
     f = io.StringIO(serialised)
     df_csv = pd.read_csv(f, converters={0: pd.to_datetime}, index_col=0)
     assert np.isclose(df, df3).all()
+    
+    s = CustomGET('oil','BRENT', 'd', '2017').get_csv()
+    assert '2017-05-23,53.19\n' in s
+    
+    cg2 = CustomGET('all','ZZZ', 'd', '2017')
+    assert len(cg2.get_csv()) == 0
  
