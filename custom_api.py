@@ -1,37 +1,55 @@
-"""Decompose time series API URL.
+"""Decompose custom URL.
 
-URL format:
-    
+    URL format (? marks optional parameter):
+        
     {domain}/series/{varname}/{freq}/{?suffix}/{?start}/{?end}/{?finaliser}
     
-Rule1:
-    {?suffix} is translated to unit in a simple version (v1)              
-    
-Rule2:
-    in a v2 version: 
-        {?suffix} is {?rate} or {?agg} they are mutually exclusive:
-            if {?suffix} is in (eop, avg) then {agg} is defined
-            if {?suffix} is in (yoy, rog, base) then {rate} is defined
-            {unit} name must be defined 
+    Examples:
+        oil/series/BRENT/m/eop/2015/2017/csv
+        ru/series/EXPORT_GOODS/m/bln_rub
+        
+    Tokens:         
+        {domain} is reserved, future use: 'all', 'ru', 'oil', 'ru:bank', 'ru:77'
+        
+        {varname} is GDP, GOODS_EXPORT, BRENT (capital letters with underscores)
+        
+        {freq} is any of:
+            a (annual)
+            q (quarterly)
+            m (monthly)
+            w (weekly)
+            d (daily)
+        
+        {?suffix} may be: 
             
-To integrate here:    
-    <https://github.com/mini-kep/frontend-app/blob/master/apps/views/time_series.py>    
+            unit of measurement (unit):
+                example: bln_rub, bln_usd, tkm
+                
+            rate of change for real variable (rate):
+                rog - change to previous period
+                yoy - change to year ago
+                base - base index
+                
+            aggregation command (agg): 
+                eop - end of period
+                avg - average
+               
+    To integrate here:    
+        <https://github.com/mini-kep/frontend-app/blob/master/apps/views/time_series.py>    
 
+Decomposition procedure involves:
+    
+    CustomGET class
+    InnerPath class
+    to_csv()
+    
 """
 
 from datetime import date
 
 import pandas as pd
 import requests
-import json
 
-
-ALLOWED_DOMAINS = (
-    'ru',
-    'oil',
-    'all',
-    # more domains?
-)
 
 ALLOWED_FREQUENCIES = 'dwmqa'
 
@@ -45,11 +63,10 @@ ALLOWED_AGGREGATORS = (
     'avg'
 )
 ALLOWED_FINALISERS = (
-    'info',
-    'csv',
-    'list', # default 
-    'pandas',  
-    'xlsx'
+    'info',  # resereved - retrun json with variable and url description 
+    'csv',   # to implement: return csv (default) 
+    'json',  # to implement: return list of dictionaries
+    'xlsx'   # resereved - return Excel file
 )
 
 class InnerPath:   
@@ -62,16 +79,16 @@ class InnerPath:
         """        
         # *tokens* is a list of non-empty strings
         tokens = [token.strip() for token in inner_path.split('/') if token]        
-        # date parameters
+        # 1. extract dates, if any
         self.dict = self.assign_dates(tokens)
-        # finaliser
+        # 2. find finaliser, if any
         self.dict['fin']  = self.assign_values(tokens, ALLOWED_FINALISERS)
-        # transforms
+        # 3. find transforms, if any
         self.dict['rate'] = self.assign_values(tokens, ALLOWED_REAL_RATES)
         self.dict['agg']  = self.assign_values(tokens, ALLOWED_AGGREGATORS)
         if self.dict['rate'] and self.dict['agg']:
             raise ValueError("Cannot combine rate and aggregation.")
-        # unit name
+        # 4. find unit name, if present
         if tokens:
             self.dict['unit'] = tokens[0]
         else:
@@ -80,9 +97,9 @@ class InnerPath:
     def get_dict(self):
         return self.dict
 
-    def assign_dates(self, tokens):
-        result = {}
+    def assign_dates(self, tokens):        
         start_year, end_year = self.get_years(tokens)
+        result = {}
         result['start_date'] = self.as_date(start_year, month=1, day=1)
         result['end_date'] = self.as_date(end_year, month=12, day=31)  
         return result 
@@ -98,7 +115,9 @@ class InnerPath:
 
     @staticmethod
     def get_years(tokens):
-        """Extract years from a list of *tokens* strings."""
+        """Extract years from a list of *tokens* strings.
+           Pops values found away from *tokens*.
+        """
         start, end = None, None
         integers = [x for x in tokens if x.isdigit()]
         if len(integers) in (1, 2):
@@ -111,61 +130,136 @@ class InnerPath:
 
     @staticmethod
     def assign_values(tokens, allowed_values):
-        """Find entries of *allowed_values* into *tokens*."""
+        """Find entries of *allowed_values* into *tokens*.
+           Pops values found away from *tokens*.
+        """
         values_found = [p for p in allowed_values if p in tokens]
         if not values_found:
             return None
         elif len(values_found) == 1:
             x = values_found[0]
             tokens.pop(tokens.index(x))
-            return x
-            
+            return x            
         else:
             raise ValueError(values_found)
+            
+            
+class InvalidUsage(Exception):
+    """Shorter version of 
+       <http://flask.pocoo.org/docs/0.12/patterns/apierrors/>.
+       
+       Must also register a handler (see link above).
+    """    
+    status_code = 400
 
-def get_freq(freq: str):
-    if freq not in ALLOWED_FREQUENCIES:
-        raise ValueError(f"Frequency <{freq}> is not valid")
-    return freq
+    def __init__(self, message, status_code=None):
+        Exception.__init__(self)
+        self.message = message
+        if status_code is not None:
+            self.status_code = status_code
 
-def mimic_custom_api(path: str):
-    """Decode path like: 
+    def to_dict(self):
+        return dict(message=self.message)            
+
+class CustomGET:
     
-       api/oil/series/BRENT/m/eop/2015/2017/csv
-index    0   1      2     3 4   5 .... 
+    @staticmethod
+    def make_freq(freq: str):
+        if freq not in ALLOWED_FREQUENCIES:
+            raise InvalidUsage(f'Frequency <{freq}> is not valid')
+        return freq           
+    
+    @staticmethod
+    def make_name(varname, unit):
+        name = varname
+        if unit:
+            name = f'{name}_{unit}'
+        return name
+
+    @staticmethod
+    def make_dates(ip: dict):
+        return {key:ip[key] for key in ['start_date', 'end_date'] if ip[key]}           
+    
+    def __init__(self, domain, varname, freq, inner_path):
+        ip = InnerPath(inner_path).get_dict()        
+        self.params = dict(name=self.make_name(varname, ip['unit']),
+                           freq=self.make_freq(freq))
+        self.params.update(self.make_dates(ip))
+        
+    def get_csv(self):
+        endpoint = 'http://minikep-db.herokuapp.com/api/datapoints'
+        r = requests.get(endpoint, params=self.params)            
+        if r.status_code == 200:
+            data = r.json()
+            return to_csv(data)            
+        else:
+            raise InvalidUsage(f'Cannot read from {endpoint}.')
+
+# serialiser fucntion 
+def yield_csv_row(dicts):
+    """
+    Arg: 
+       dicts - list of dictionaries like 
+               {'date': '1992-07-01', 'freq': 'd', 'name': 'USDRUR_CB', 'value': 0.1253}
+       
+    Returns:
+       string like ',USDRUR_CB\n1992-07-01,0.1253\n'           
        
     """
-    assert path.startswith('api/')
-    tokens = [token.strip() for token in path.split('/') if token]
-    # mandatoy part - in actual code taken care by flask
-    ctx = dict(domain=tokens[1],
-               varname=tokens[3],
-               freq=get_freq(tokens[4]))
-    # optional part
-    if len(tokens) >= 6:
-        inner_path_str = "/".join(tokens[5:])
-        d = InnerPath(inner_path_str).get_dict()        
-        ctx.update(d)
-    return ctx
+    datapoints = list(dicts)
+    name = datapoints[0]['name']
+    yield ',{}'.format(name)
+    for d in datapoints:
+        yield '{},{}'.format(d['date'], d['value'])
+    # this yield is responsible for last \n in csv     
+    yield ''
+        
+def to_csv(dicts):
+    if dicts: 
+        rows = list(yield_csv_row(dicts)) 
+        return '\n'.join(rows)
+    else:
+        return ''
 
-def make_db_api_get_call_parameters(path):
-    ctx = mimic_custom_api(path)
-    name, unit = (ctx[key] for key in ['varname', 'unit'])
-    if unit:
-        name = f"{name}_{unit}"
-    params = dict(name=name,  freq=ctx['freq'])
-    upd = [(key, ctx[key]) for key in ['start_date', 'end_date'] if ctx[key]]
-    params.update(upd)
-    return params       
 
 if __name__ == "__main__":
-    
+    import pytest
     from pprint import pprint
     import io
     import numpy as np
+    
+    def mimic_custom_api(path: str):
+        """Decode path like: 
+        
+           api/oil/series/BRENT/m/eop/2015/2017/csv
+    index    0   1      2     3 4   5 .... 
+           
+        """
+        assert path.startswith('api/')
+        tokens = [token.strip() for token in path.split('/') if token]
+        # mandatoy part - in actual code taken care by flask
+        ctx = dict(domain=tokens[1],
+                   varname=tokens[3],
+                   freq=tokens[4])
+        # optional part
+        if len(tokens) >= 6:
+            inner_path_str = "/".join(tokens[5:])
+            d = InnerPath(inner_path_str).get_dict()        
+            ctx.update(d)
+        return ctx
+    
+    def make_db_api_get_call_parameters(path):
+        ctx = mimic_custom_api(path)
+        name, unit = (ctx[key] for key in ['varname', 'unit'])
+        if unit:
+            name = f"{name}_{unit}"
+        params = dict(name=name,  freq=ctx['freq'])
+        upd = [(key, ctx[key]) for key in ['start_date', 'end_date'] if ctx[key]]
+        params.update(upd)
+        return params  
 
 
-    # valid urls 
+    # valid inner urls 
     'api/oil/series/BRENT/m/eop/2015/2017/csv' # will fail of db GET call
     'api/ru/series/EXPORT_GOODS/m/bln_rub' # will pass
     'api/ru/series/USDRUR_CB/d/xlsx' # will fail
@@ -257,37 +351,52 @@ if __name__ == "__main__":
     assert control_datapoint_1 in data
     assert control_datapoint_2 in data
     
-    # TODO: need 'pandas' formatting parameter or another database endpoint to be able
-    # to use pd.read_json(<long url>)
-    
-    def to_json(dicts):    
-        df = pd.DataFrame(dicts)
-        df.date = df.date.apply(pd.to_datetime)
-        df = df.pivot(index='date', values='value', columns='name')
-        return df.to_json(orient='split')
-
-    def to_csv(dicts):
-        df = pd.DataFrame(dicts)
-        df.date = df.date.apply(pd.to_datetime)
-        df = df.pivot(index='date', values='value', columns='name')
-        return df.to_csv()
-
-       
+    # reference dataframe
     df = pd.DataFrame(data)
     df.date = df.date.apply(pd.to_datetime)
     df = df.pivot(index='date', values='value', columns='name')
+    df.index.name = None
     df = df.sort_index()
     
     assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
-    assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
+    assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']    
+    
+    # serialisation issues 
+    
+    def to_json(dicts, orient='columns'):    
+        df = pd.DataFrame(dicts)
+        df.date = df.date.apply(pd.to_datetime)
+        df = df.pivot(index='date', values='value', columns='name')
+        df.index.name = None
+        return df.to_json(orient=orient)
+
+    def to_csv_df(dicts):
+        df = pd.DataFrame(dicts)
+        df.date = df.date.apply(pd.to_datetime)
+        df = df.pivot(index='date', values='value', columns='name')
+        df.index.name = None
+        return df.to_csv()
 
     # ERROR: something goes wrong with date handling
-    #        if we use df.to_json(), we shoudl be able to read it with pd.read_json()
-
-    # data2 = to_json(dicts=data)
-    # f = io.StringIO(data2)
-    # df2 = pd.read_json(f)
+    serialised = to_json(dicts=data)
+    f = io.StringIO(serialised)
+    df2 = pd.read_json(f)    
+    with pytest.raises(AssertionError):
+        assert df.equals(df2) 
     
+    # solution 1: split + precise_float=True (@Perevedko)
+    serialised = to_json(dicts=data, orient='split')
+    f = io.StringIO(serialised)
+    df2 = pd.read_json(f, orient='split', precise_float=True)    
+    assert df.equals(df2)   
+    
+    # solution 2: sort index + different comparison func (@zarak)
+    serialised = to_json(dicts=data, orient='columns')
+    f = io.StringIO(serialised)
+    df3 = pd.read_json(f) 
+    df3 = df3.sort_index()
+    assert np.isclose(df, df3).all()
+
     # COMMENT: there are two sources of an error 
     #
     #           - one is rounding error and this is a smaller evil
@@ -298,10 +407,7 @@ if __name__ == "__main__":
     #             with default orent='columns' we cannot gaurantee the 
     #             order of rows, unless a) we sort the rows on client side,
     #             b) we change orient to something different, like 'split',
-    #             both on server and client side 
-    #
-    # df2 = df2.sort_index()
-    # assert np.isclose(df, df2).all()
+    #             both on server and client side     
     
     # QUESTION:
     # the original intent was to provide user with no-parameter import
@@ -311,14 +417,22 @@ if __name__ == "__main__":
     # 1) pd.import_json('<long url>', orient='split')
     # 2) pd.read_csv('<long url>', converters={0: pd.to_datetime}, index_col=0)
     
-    # I slightly favour 2) because htis way we will hvae one format less, even
-    # though it is slightly londer on client side. What is your opinion?
-    f = io.StringIO(to_json(dicts=data))
-    df2 = pd.read_json(f, orient='split', precise_float=True)
-    assert df.equals(df2)
+    # EP: I favour 2) because we will have less formats, even
+    # though it is slightly longer on client side. 
 
-    data_csv = io.StringIO(to_csv(data))
-    df_csv = pd.read_csv(data_csv, converters={0: pd.to_datetime}, index_col=0, float_precision='high')
-    assert df.equals(df_csv)
-
+    # EP: recommended serialisation
+    serialised = to_csv(data)
+    f = io.StringIO(serialised)
+    df_csv = pd.read_csv(f, converters={0: pd.to_datetime}, index_col=0)
+    assert np.isclose(df, df3).all()
+    
+    s = CustomGET('oil','BRENT', 'd', '2017').get_csv()
+    assert '2017-05-23,53.19\n' in s
+    
+    cg2 = CustomGET('all','ZZZ', 'd', '2017')
+    assert len(cg2.get_csv()) == 0
+    
+    assert CustomGET.make_freq('a')
+    with pytest.raises(InvalidUsage):
+        CustomGET.make_freq('z')
  
