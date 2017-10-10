@@ -142,13 +142,31 @@ class InnerPath:
             return x            
         else:
             raise ValueError(values_found)
+            
+            
+class InvalidUsage(Exception):
+    """Shorter version of 
+       <http://flask.pocoo.org/docs/0.12/patterns/apierrors/>.
+       
+       Must also register a handler (see link above).
+    """    
+    status_code = 400
+
+    def __init__(self, message, status_code=None):
+        Exception.__init__(self)
+        self.message = message
+        if status_code is not None:
+            self.status_code = status_code
+
+    def to_dict(self):
+        return dict(message=self.message)            
 
 class CustomGET:
     
     @staticmethod
     def make_freq(freq: str):
         if freq not in ALLOWED_FREQUENCIES:
-            raise ValueError(f'Frequency <{freq}> is not valid')
+            raise InvalidUsage(f'Frequency <{freq}> is not valid')
         return freq           
     
     @staticmethod
@@ -175,7 +193,7 @@ class CustomGET:
             data = r.json()
             return to_csv(data)            
         else:
-            raise ValueError
+            raise InvalidUsage(f'Cannot read from {endpoint}.')
 
 # serialiser fucntion 
 def yield_csv_row(dicts):
@@ -413,4 +431,8 @@ if __name__ == "__main__":
     
     cg2 = CustomGET('all','ZZZ', 'd', '2017')
     assert len(cg2.get_csv()) == 0
+    
+    assert CustomGET.make_freq('a')
+    with pytest.raises(InvalidUsage):
+        CustomGET.make_freq('z')
  
