@@ -51,7 +51,7 @@ import pandas as pd
 import requests
 
 
-ALLOWED_FREQUENCIES = 'dwmqa'
+ALLOWED_FREQUENCIES = ('d', 'w', 'm', 'q', 'a')
 
 ALLOWED_REAL_RATES = (
     'rog',
