@@ -264,8 +264,14 @@ if __name__ == "__main__":
         df = pd.DataFrame(dicts)
         df.date = df.date.apply(pd.to_datetime)
         df = df.pivot(index='date', values='value', columns='name')
-        return df.to_json(orient='columns')
-    
+        return df.to_json(orient='split')
+
+    def to_csv(dicts):
+        df = pd.DataFrame(dicts)
+        df.date = df.date.apply(pd.to_datetime)
+        df = df.pivot(index='date', values='value', columns='name')
+        return df.to_csv()
+
        
     df = pd.DataFrame(data)
     df.date = df.date.apply(pd.to_datetime)
@@ -274,14 +280,13 @@ if __name__ == "__main__":
     
     assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
     assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
-    
-    
+
     # ERROR: something goes wrong with date handling
     #        if we use df.to_json(), we shoudl be able to read it with pd.read_json()
 
-    data2 = to_json(dicts=data)
-    f = io.StringIO(data2)
-    df2 = pd.read_json(f)        
+    # data2 = to_json(dicts=data)
+    # f = io.StringIO(data2)
+    # df2 = pd.read_json(f)
     
     # COMMENT: there are two sources of an error 
     #
@@ -295,8 +300,8 @@ if __name__ == "__main__":
     #             b) we change orient to something different, like 'split',
     #             both on server and client side 
     #
-    df2 = df2.sort_index()
-    assert np.isclose(df, df2).all()
+    # df2 = df2.sort_index()
+    # assert np.isclose(df, df2).all()
     
     # QUESTION:
     # the original intent was to provide user with no-parameter import
@@ -310,5 +315,10 @@ if __name__ == "__main__":
     # though it is slightly londer on client side. What is your opinion?
     f = io.StringIO(to_json(dicts=data))
     df2 = pd.read_json(f, orient='split', precise_float=True)
-    assert df.equals(df2)        
+    assert df.equals(df2)
+
+    data_csv = io.StringIO(to_csv(data))
+    df_csv = pd.read_csv(data_csv, converters={0: pd.to_datetime}, index_col=0, float_precision='high')
+    assert df.equals(df_csv)
+
  
