@@ -178,10 +178,10 @@ class CustomGET:
 
     @staticmethod
     def make_dates(ip: dict):
-        return {key:ip[key] for key in ['start_date', 'end_date'] if ip[key]}           
+        return {key:ip[key] for key in ['start_date', 'end_date'] if ip.get(key)}
     
     def __init__(self, domain, varname, freq, inner_path):
-        ip = InnerPath(inner_path).get_dict()        
+        ip = InnerPath(inner_path).get_dict()
         self.params = dict(name=self.make_name(varname, ip['unit']),
                            freq=self.make_freq(freq))
         self.params.update(self.make_dates(ip))
