@@ -101,7 +101,25 @@ class TokenHelper:
     def __init__(self, tokens: list):
         self.tokens = tokens
 
-    def years(self):
+    def get_dates_dict(self):
+        start_year, end_year = self._find_years()
+        result = {}
+        if start_year:
+            result['start_date'] = self._as_date(start_year, month=1, day=1)
+        if end_year:
+            result['end_date'] = self._as_date(end_year, month=12, day=31)
+        return result
+
+    def fin(self):
+        return self._find_one(ALLOWED_FINALISERS)
+
+    def rate(self):
+        return self._find_one(ALLOWED_REAL_RATES)
+
+    def agg(self):
+        return self._find_one(ALLOWED_AGGREGATORS)
+
+    def _find_years(self):
         """Extract years from *tokens* list. Pops values found away from *tokens*."""
         start, end = None, None
         integers = [x for x in self.tokens if x.isdigit()]
@@ -113,14 +131,12 @@ class TokenHelper:
             self._pop(end)
         return start, end
 
-    def fin(self):
-        return self._find_one(ALLOWED_FINALISERS)
-
-    def rate(self):
-        return self._find_one(ALLOWED_REAL_RATES)
-
-    def agg(self):
-        return self._find_one(ALLOWED_AGGREGATORS)
+    @staticmethod
+    def _as_date(year: str, month: int, day: int):
+        """Generate YYYY-MM-DD dates based on components."""
+        return date(year=int(year),
+                    month=month,
+                    day=day).strftime('%Y-%m-%d')
 
     def _pop(self, value):
         self.tokens.pop(self.tokens.index(value))
@@ -154,13 +170,8 @@ class InnerPath:
         # list of non-empty strings
         tokens = [token.strip() for token in inner_path.split('/') if token]
         helper = TokenHelper(tokens)
-        self.dict = {}
         # extract dates
-        start_year, end_year = helper.years()
-        if start_year:
-            self.dict['start_date'] = self._as_date(start_year, month=1, day=1)
-        if end_year:
-            self.dict['end_date'] = self._as_date(end_year, month=12, day=31)
+        self.dict = helper.get_dates_dict()
         # finaliser and transforms
         self.dict['fin'] = helper.fin()
         self.dict['rate'] = helper.rate()
@@ -173,21 +184,11 @@ class InnerPath:
         else:
             self.dict['unit'] = self.dict['rate'] or None
 
-    @staticmethod
-    def _as_date(year: str, month: int, day: int):
-        """Generate YYYY-MM-DD dates based on components."""
-        if year:
-            return date(year=int(year),
-                        month=month,
-                        day=day).strftime('%Y-%m-%d')
-        else:
-            return None
-
     def get_dict(self):
         return self.dict
 
 
-class CustomGET:    
+class CustomGET:
 
     @staticmethod
     def make_name(varname, unit=None):
@@ -241,7 +242,6 @@ if __name__ == "__main__":
         ctx['inner_path'] = "/".join(tokens[4:])
         return ctx
 
-
     # valid inner urls
     'oil/series/BRENT/m/eop/2015/2017/csv'  # will fail of db GET call
     'ru/series/EXPORT_GOODS/m/bln_rub'  # will pass
@@ -288,10 +288,10 @@ if __name__ == "__main__":
         }
 
     }
-        
+
     # cut out calls to API if in interpreter
-    d = {'format': 'json', 
-         'freq': 'd', 
+    d = {'format': 'json',
+         'freq': 'd',
          'name': 'USDRUR_CB'}
     try:
         r
@@ -321,8 +321,8 @@ if __name__ == "__main__":
 
     assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
     assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
-    
+
     getter = CustomGET(domain=None,
-                                      varname='ZZZ',
-                                      freq='d',
-                                      inner_path='')
+                       varname='ZZZ',
+                       freq='d',
+                       inner_path='')

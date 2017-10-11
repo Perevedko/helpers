@@ -27,18 +27,25 @@ def _tokens():
 # NOT TODO: may parametrise this test
 
 
-class Test_TokenHelper:
-
-    def setup_method(self):
-        self._tokens = ['eop', '2000', 'csv']
-
+class Test_TokenHelper_year_handling:
     def test_years(self, _tokens):
-        assert custom_api.TokenHelper(tokens=_tokens).years() == \
+        assert custom_api.TokenHelper(tokens=['2000'])._find_years() == \
             ('2000', None)
 
     def test_on_two_years(self):
-        assert custom_api.TokenHelper(tokens=['2005', '2007']).years() == \
-            ('2005', '2007')
+        assert custom_api.TokenHelper(
+            tokens=[
+                '2005',
+                '2007'])._find_years() == (
+            '2005',
+            '2007')
+
+
+class Test_TokenHelper:
+
+    def test_get_dates_dict(self, _tokens):
+        assert custom_api.TokenHelper(tokens=_tokens).get_dates_dict() == \
+            {'start_date': '2000-01-01'}
 
     def test_fin(self, _tokens):
         assert custom_api.TokenHelper(tokens=_tokens).fin() == 'csv'
@@ -57,12 +64,12 @@ class Test_TokenHelper:
 
 class Test_as_date(object):
     def test_as_date_with_valid_date(self):
-        as_date = custom_api.InnerPath._as_date('2010', 5, 25)
+        as_date = custom_api.TokenHelper._as_date('2010', 5, 25)
         assert as_date == '2010-05-25'
 
     def test_as_date_with_invalid_date(self):
         with pytest.raises(ValueError):
-            custom_api.InnerPath._as_date('2010', 0, 0)
+            custom_api.TokenHelper._as_date('2010', 0, 0)
 
 
 class Test_InnerPath:
@@ -81,8 +88,10 @@ class Test_InnerPath:
         with pytest.raises(custom_api.InvalidUsage):
             custom_api.InnerPath('eop/rog')
 
+
 def test_uses_http_not_https():
     assert custom_api.ENDPOINT.startswith('http://')
+
 
 class TestCustomGET(object):
     def test_get_csv_on_valid_params_fetches_data(self):
