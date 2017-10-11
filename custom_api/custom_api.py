@@ -69,6 +69,9 @@ ALLOWED_FINALISERS = (
     'xlsx'   # resereved: return Excel file
 )
 
+# http, not https
+ENDPOINT = 'http://minikep-db.herokuapp.com/api/datapoints'
+
 
 def make_freq(freq: str):
     if freq not in ALLOWED_FREQUENCIES:
@@ -184,9 +187,7 @@ class InnerPath:
         return self.dict
 
 
-class CustomGET:
-
-    endpoint = 'http://minikep-db.herokuapp.com/api/datapoints'
+class CustomGET:    
 
     @staticmethod
     def make_name(varname, unit=None):
@@ -205,13 +206,16 @@ class CustomGET:
                 self.params[key] = val
 
     def get_csv(self):
-        _params = self.params
-        _params['format'] = 'csv'
-        r = requests.get(self.endpoint, params=_params)
-        if r.status_code == 200:
-            return r.text
-        else:
-            raise InvalidUsage(f'Cannot read from {endpoint}.')
+        return call_db_api(self.params, fmt='csv')
+
+
+def call_db_api(params, fmt):
+    params['format'] = fmt
+    r = requests.get(self.endpoint, params=params)
+    if r.status_code == 200:
+        return r.text
+    else:
+        raise InvalidUsage(f'Cannot read from {endpoint}.')
 
 # serialiser moved to db api
 
@@ -223,43 +227,28 @@ if __name__ == "__main__":
     def mimic_custom_api(path: str):
         """Decode path like:
 
-           api/oil/series/BRENT/m/eop/2015/2017/csv
-    index    0   1      2     3 4   5 ....
+           oil/series/BRENT/m/eop/2015/2017/csv
+    index    0      1     2 3   4    5 ....
 
         """
-        assert path.startswith('api/')
         tokens = [token.strip() for token in path.split('/') if token]
         # mandatoy part - in actual code taken care by flask
-        ctx = dict(domain=tokens[1],
-                   varname=tokens[3],
-                   freq=tokens[4])
+        ctx = dict(domain=tokens[0],
+                   varname=tokens[2],
+                   freq=tokens[3])
         # optional part
-        if len(tokens) >= 6:
-            inner_path_str = "/".join(tokens[5:])
-            d = InnerPath(inner_path_str).get_dict()
-            ctx.update(d)
+        ctx['inner_path'] = "/".join(tokens[4:])
         return ctx
 
-    def make_db_api_get_call_parameters(path):
-        ctx = mimic_custom_api(path)
-        name, unit = (ctx[key] for key in ['varname', 'unit'])
-        if unit:
-            name = f"{name}_{unit}"
-        params = dict(name=name, freq=ctx['freq'])
-        upd = [(key, ctx[key])
-               for key in ['start_date', 'end_date'] if ctx.get(key)]
-        params.update(upd)
-        return params
 
     # valid inner urls
-    'api/oil/series/BRENT/m/eop/2015/2017/csv'  # will fail of db GET call
-    'api/ru/series/EXPORT_GOODS/m/bln_rub'  # will pass
-    'api/ru/series/USDRUR_CB/d/xlsx'  # will fail
+    'oil/series/BRENT/m/eop/2015/2017/csv'  # will fail of db GET call
+    'ru/series/EXPORT_GOODS/m/bln_rub'  # will pass
+    'ru/series/USDRUR_CB/d/xlsx'  # will fail
 
-    # FIXME: test for failures
     # invalid urls
-    'api/oil/series/BRENT/q/rog/eop'
-    'api/oil/series/BRENT/z/'
+    'oil/series/BRENT/q/rog/eop'
+    'oil/series/BRENT/z/'
 
     test_pairs = {
         'api/oil/series/BRENT/m/eop/2015/2017/csv': {
@@ -298,45 +287,15 @@ if __name__ == "__main__":
         }
 
     }
-
-    for url, d in test_pairs.items():
-        print()
-        print(url)
-        pprint(d)
-        assert mimic_custom_api(url) == d
-        print(make_db_api_get_call_parameters(url))
-
-    test_pairs2 = {
-        'api/oil/series/BRENT/m/eop/2015/2017/csv': {
-            'name': 'BRENT',
-            'freq': 'm',
-            'start_date': '2015-01-01',
-            'end_date': '2017-12-31'},
-
-        'api/ru/series/EXPORT_GOODS/m/bln_rub': {
-            'name': 'EXPORT_GOODS_bln_rub',
-            'freq': 'm'},
-
-        'api/ru/series/USDRUR_CB/d/xlsx': {
-            'name': 'USDRUR_CB',
-            'freq': 'd'}
-    }
-
-    for url, d in test_pairs2.items():
-        assert make_db_api_get_call_parameters(url) == d
-
-    # get actual data from url
-    # http://minikep-db.herokuapp.com/api/datapoints?name=USDRUR_CB&freq=d&start_date=2017-08-01&end_date=2017-10-01
-
-    # using http, https fails loaclly
-    endpoint = 'http://minikep-db.herokuapp.com/api/datapoints'
-
+        
     # cut out calls to API if in interpreter
-    d = {'format': 'json', 'freq': 'd', 'name': 'USDRUR_CB'}
+    d = {'format': 'json', 
+         'freq': 'd', 
+         'name': 'USDRUR_CB'}
     try:
         r
     except NameError:
-        r = requests.get(endpoint, params=d)
+        r = requests.get(ENDPOINT, params=d)
     assert r.status_code == 200
     data = r.json()
     control_datapoint_1 = {
@@ -361,13 +320,3 @@ if __name__ == "__main__":
 
     assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
     assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
-
-    s = CustomGET('oil', 'BRENT', 'd', '2017').get_csv()
-    assert '2017-05-23,53.19\n' in s
-
-    cg = CustomGET('all', 'ZZZ', 'd', '2017')
-    assert len(cg.get_csv()) == 0
-
-    assert make_freq('a') == 'a'
-    with pytest.raises(InvalidUsage):
-        make_freq('z')

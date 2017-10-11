@@ -81,12 +81,10 @@ class Test_InnerPath:
         with pytest.raises(custom_api.InvalidUsage):
             custom_api.InnerPath('eop/rog')
 
+def test_uses_http_not_https(self):
+    assert custom_api.ENDPOINT.startswith('http://')
 
 class TestCustomGET(object):
-
-    def test_uses_http_not_https(self):
-        assert custom_api.CustomGET.endpoint.startswith('http://')
-
     def test_get_csv_on_valid_params_fetches_data(self):
         getter = custom_api.CustomGET('oil', 'BRENT', 'd', '2017')
         api_csv_str = getter.get_csv()
