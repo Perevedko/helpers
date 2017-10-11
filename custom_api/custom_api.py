@@ -209,13 +209,14 @@ class CustomGET:
         return call_db_api(self.params, fmt='csv')
 
 
-def call_db_api(params, fmt):
+def call_db_api(params, fmt, endpoint=ENDPOINT):
     params['format'] = fmt
-    r = requests.get(self.endpoint, params=params)
+    r = requests.get(endpoint, params=params)
     if r.status_code == 200:
         return r.text
     else:
-        raise InvalidUsage(f'Cannot read from {endpoint}.')
+        msg = f'Cannot read {params} from {endpoint}.'
+        raise InvalidUsage(msg)
 
 # serialiser moved to db api
 
@@ -320,3 +321,8 @@ if __name__ == "__main__":
 
     assert df.USDRUR_CB['1992-07-01'] == control_datapoint_1['value']
     assert df.USDRUR_CB['2017-09-28'] == control_datapoint_2['value']
+    
+    getter = CustomGET(domain=None,
+                                      varname='ZZZ',
+                                      freq='d',
+                                      inner_path='')

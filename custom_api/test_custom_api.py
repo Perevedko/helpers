@@ -81,7 +81,7 @@ class Test_InnerPath:
         with pytest.raises(custom_api.InvalidUsage):
             custom_api.InnerPath('eop/rog')
 
-def test_uses_http_not_https(self):
+def test_uses_http_not_https():
     assert custom_api.ENDPOINT.startswith('http://')
 
 class TestCustomGET(object):
@@ -95,8 +95,8 @@ class TestCustomGET(object):
                                       varname='ZZZ',
                                       freq='d',
                                       inner_path='')
-        api_csv_str = getter.get_csv()
-        assert len(api_csv_str) == 0
+        with pytest.raises(custom_api.InvalidUsage):
+            api_csv_str = getter.get_csv()
 
 
 if __name__ == '__main__':
