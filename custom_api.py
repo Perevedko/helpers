@@ -106,6 +106,7 @@ class InnerPath:
 
     @staticmethod
     def as_date(year: str, month: int, day: int):
+        """Generate YYYY-MM-DD dates based on components.""" 
         if year:
             return date(year=int(year), 
                         month=month, 
@@ -175,18 +176,22 @@ class CustomGET:
         if unit:
             name = f'{name}_{unit}'
         return name
-
+    
+    # FIXME: this should be part of InnerPath class.
     @staticmethod
     def make_dates(ip: dict):
+        """Return dictionary with 'start_date' and 'end_date' keys."""
         return {key:ip[key] for key in ['start_date', 'end_date'] if ip.get(key)}
     
     def __init__(self, domain, varname, freq, inner_path):
         ip = InnerPath(inner_path).get_dict()
         self.params = dict(name=self.make_name(varname, ip['unit']),
                            freq=self.make_freq(freq))
+        # FIXME: call <ip.get_formatted_dates_dict()>
         self.params.update(self.make_dates(ip))
         
     def get_csv(self):
+        # FIXME: make it class variable
         endpoint = 'http://minikep-db.herokuapp.com/api/datapoints'
         r = requests.get(endpoint, params=self.params)            
         if r.status_code == 200:
@@ -195,15 +200,16 @@ class CustomGET:
         else:
             raise InvalidUsage(f'Cannot read from {endpoint}.')
 
-# serialiser fucntion 
+# serialiser
 def yield_csv_row(dicts):
-    """
+    """Yields CSV rows strings.
+    
     Arg: 
        dicts - list of dictionaries like 
                {'date': '1992-07-01', 'freq': 'd', 'name': 'USDRUR_CB', 'value': 0.1253}
        
-    Returns:
-       string like ',USDRUR_CB\n1992-07-01,0.1253\n'           
+    Yields:
+       string like ',USDRUR_CB', followed by strings like '1992-07-01,0.1253'           
        
     """
     datapoints = list(dicts)
@@ -215,6 +221,7 @@ def yield_csv_row(dicts):
     yield ''
         
 def to_csv(dicts):
+    """Convert list of dictionaries to CSV string."""
     if dicts: 
         rows = list(yield_csv_row(dicts)) 
         return '\n'.join(rows)
