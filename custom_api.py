@@ -1,4 +1,4 @@
-"""Decompose custom URL.
+"""Decompose custom URL. 
 
     URL format (? marks optional parameter):
 
