@@ -177,7 +177,6 @@ class CustomGET:
             name = f'{name}_{unit}'
         return name
     
-    # FIXME: this should be part of InnerPath class.
     @staticmethod
     def make_dates(ip: dict):
         """Return dictionary with 'start_date' and 'end_date' keys."""
@@ -187,7 +186,6 @@ class CustomGET:
         ip = InnerPath(inner_path).get_dict()
         self.params = dict(name=self.make_name(varname, ip['unit']),
                            freq=self.make_freq(freq))
-        # FIXME: call <ip.get_formatted_dates_dict()>
         self.params.update(self.make_dates(ip))
         
     def get_csv(self):
