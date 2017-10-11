@@ -4,9 +4,7 @@ import custom_api
 
 class TestCustomGET(object):
     def test_make_freq_with_valid_param_is_ok(self):
-        freq = 'q'
-        produced_freq = custom_api.CustomGET.make_freq(freq)
-        assert freq == produced_freq
+        assert custom_api.CustomGET.make_freq('q') == 'q'
 
     def test_make_freq_with_invalid_param_should_fail(self):
         with pytest.raises(custom_api.InvalidUsage):
@@ -20,8 +18,8 @@ class TestCustomGET(object):
         assert {} == custom_api.CustomGET.make_dates({})
 
     def test_get_csv_with_valid_params_should_fetch_data(self):
-        get = custom_api.CustomGET('oil', 'BRENT', 'd', '2017').get_csv()
-        assert '2017-05-23,53.19\n' in get
+        csv_from_api = custom_api.CustomGET('oil', 'BRENT', 'd', '2017').get_csv()
+        assert '2017-05-23,53.19\n' in csv_from_api
 
     def test_get_csv_with_bad_params_should_return_empty_csv_string(self):
         get = custom_api.CustomGET('all', 'ZZZ', 'd', '2017')
@@ -30,8 +28,8 @@ class TestCustomGET(object):
 
 class TestInnerPath(object):
     def test_as_date_with_valid_date(self):
-        as_date = custom_api.InnerPath.as_date('2010', 5, 3)
-        assert as_date == '2010-05-03'
+        as_date = custom_api.InnerPath.as_date('2010', 5, 25)
+        assert as_date == '2010-05-25'
 
     def test_as_date_with_invalid_date(self):
         with pytest.raises(ValueError):
@@ -61,7 +59,7 @@ class TestInnerPath(object):
         }
 
     def test_constructor_with_both_rate_and_agg_given_should_fail(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(custom_api.InvalidUsage):
             custom_api.InnerPath('eop/rog/2015/2018/csv')
 
     def test_assign_values_should_pop_value(self):
@@ -73,14 +71,16 @@ class TestInnerPath(object):
     def test_assign_values_should_fail_if_found_multiple_values_(self):
         tokens = ['a', 'b', 'c', 'd']
         allowed_values = ['a', 'b', 'c']
-        with pytest.raises(ValueError):
+        with pytest.raises(custom_api.InvalidUsage):
             custom_api.InnerPath.assign_values(tokens, allowed_values)
 
     def test_assign_values_on_empty_lists_is_ok(self):
         tokens = []
         allowed_values = []
         value = custom_api.InnerPath.assign_values(tokens, allowed_values)
-        assert value is None and tokens == [] and allowed_values == []
+        assert value is None
+        assert tokens == []
+        assert allowed_values == []
 
 
 class TestToCSV(object):
@@ -94,13 +94,3 @@ class TestToCSV(object):
         ]
         expected_result = ',USDRUR_CB\n1992-07-01,0.1253\n2017-09-28,58.0102\n'
         assert custom_api.to_csv(data) == expected_result
-
-    def test_should_fail_on_invalid_data(self):
-        data = [
-            {'a': 1, 'b': 2, 'c': 3},
-            {'x': [], 'y': {}},
-            {}
-        ]
-        with pytest.raises(KeyError):
-            custom_api.to_csv(data)
-

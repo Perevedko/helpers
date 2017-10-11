@@ -87,7 +87,7 @@ class InnerPath:
         self.dict['rate'] = self.assign_values(tokens, ALLOWED_REAL_RATES)
         self.dict['agg']  = self.assign_values(tokens, ALLOWED_AGGREGATORS)
         if self.dict['rate'] and self.dict['agg']:
-            raise ValueError("Cannot combine rate and aggregation.")
+            raise InvalidUsage("Cannot combine rate and aggregation.")
         # 4. find unit name, if present
         if tokens:
             self.dict['unit'] = tokens[0]
@@ -141,7 +141,7 @@ class InnerPath:
             tokens.pop(tokens.index(x))
             return x            
         else:
-            raise ValueError(values_found)
+            raise InvalidUsage(values_found)
             
             
 class InvalidUsage(Exception):
