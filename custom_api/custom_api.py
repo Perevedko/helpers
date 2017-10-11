@@ -1,4 +1,4 @@
-"""Decompose custom URL. 
+"""Decompose custom URL.
 
     URL format (? marks optional parameter):
 
@@ -70,6 +70,12 @@ ALLOWED_FINALISERS = (
 )
 
 
+def make_freq(freq: str):
+    if freq not in ALLOWED_FREQUENCIES:
+        raise InvalidUsage(f'Frequency <{freq}> is not valid')
+    return freq
+
+
 class InvalidUsage(Exception):
     """Shorter version of
        <http://flask.pocoo.org/docs/0.12/patterns/apierrors/>.
@@ -88,18 +94,9 @@ class InvalidUsage(Exception):
         return dict(message=self.message)
 
 
-def make_freq(freq: str):
-    if freq not in ALLOWED_FREQUENCIES:
-        raise InvalidUsage(f'Frequency <{freq}> is not valid')
-    return freq
-
-
 class TokenHelper:
     def __init__(self, tokens: list):
         self.tokens = tokens
-
-    def pop(self, value):
-        self.tokens.pop(self.tokens.index(value))
 
     def years(self):
         """Extract years from *tokens* list. Pops values found away from *tokens*."""
@@ -107,10 +104,10 @@ class TokenHelper:
         integers = [x for x in self.tokens if x.isdigit()]
         if len(integers) in (1, 2):
             start = integers[0]
-            self.pop(start)
+            self._pop(start)
         if len(integers) == 2:
             end = integers[1]
-            self.pop(end)
+            self._pop(end)
         return start, end
 
     def fin(self):
@@ -122,6 +119,9 @@ class TokenHelper:
     def agg(self):
         return self._find_one(ALLOWED_AGGREGATORS)
 
+    def _pop(self, value):
+        self.tokens.pop(self.tokens.index(value))
+
     def _find_one(self, allowed_values):
         """Find entries of *allowed_values* into *tokens*.
            Pops values found away from *tokens*.
@@ -131,33 +131,13 @@ class TokenHelper:
             return None
         elif len(values_found) == 1:
             x = values_found[0]
-            self.pop(x)
+            self._pop(x)
             return x
         else:
             raise InvalidUsage(values_found)
 
-    @staticmethod
-    def _as_date(year: str, month: int, day: int):
-        """Generate YYYY-MM-DD dates based on components."""
-        if year:
-            return date(year=int(year),
-                        month=month,
-                        day=day).strftime('%Y-%m-%d')
-        else:
-            return year
-
 
 class InnerPath:
-
-    @staticmethod
-    def as_date(year: str, month: int, day: int):
-        """Generate YYYY-MM-DD dates based on components."""
-        if year:
-            return date(year=int(year),
-                        month=month,
-                        day=day).strftime('%Y-%m-%d')
-        else:
-            return None
 
     def __init__(self, inner_path: str):
         """Extract parameters from *inner_path* string.
@@ -172,25 +152,33 @@ class InnerPath:
         tokens = [token.strip() for token in inner_path.split('/') if token]
         helper = TokenHelper(tokens)
         self.dict = {}
-        # 1. extract dates, if any
+        # extract dates
         start_year, end_year = helper.years()
         if start_year:
-            self.dict['start_date'] = self.as_date(start_year, month=1, day=1)
+            self.dict['start_date'] = self._as_date(start_year, month=1, day=1)
         if end_year:
-            self.dict['end_date'] = self.as_date(end_year, month=12, day=31)
-        # 2. find finaliser, if any
+            self.dict['end_date'] = self._as_date(end_year, month=12, day=31)
+        # finaliser and transforms
         self.dict['fin'] = helper.fin()
-        # 3. find transforms, if any
         self.dict['rate'] = helper.rate()
         self.dict['agg'] = helper.agg()
-        #    but cannot have both
         if self.dict['rate'] and self.dict['agg']:
             raise InvalidUsage("Cannot combine rate and aggregation.")
-        # 4. find unit name, if present
+        # find unit name, if present
         if tokens:
             self.dict['unit'] = tokens[0]
         else:
             self.dict['unit'] = self.dict['rate'] or None
+
+    @staticmethod
+    def _as_date(year: str, month: int, day: int):
+        """Generate YYYY-MM-DD dates based on components."""
+        if year:
+            return date(year=int(year),
+                        month=month,
+                        day=day).strftime('%Y-%m-%d')
+        else:
+            return None
 
     def get_dict(self):
         return self.dict
@@ -219,7 +207,7 @@ class CustomGET:
     def get_csv(self):
         _params = self.params
         _params['format'] = 'csv'
-        r = requests.get(endpoint, params=_params)
+        r = requests.get(self.endpoint, params=_params)
         if r.status_code == 200:
             return r.text
         else:
