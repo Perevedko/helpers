@@ -96,7 +96,7 @@ class TestCustomGET(object):
                                       freq='d',
                                       inner_path='')
         with pytest.raises(custom_api.InvalidUsage):
-            api_csv_str = getter.get_csv()
+            _ = getter.get_csv()
 
 
 if __name__ == '__main__':
