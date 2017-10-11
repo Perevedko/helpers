@@ -51,7 +51,7 @@ import pandas as pd
 import requests
 
 
-ALLOWED_FREQUENCIES = 'dwmqa'
+ALLOWED_FREQUENCIES = ('d', 'w', 'm', 'q', 'a')
 
 ALLOWED_REAL_RATES = (
     'rog',
@@ -87,7 +87,7 @@ class InnerPath:
         self.dict['rate'] = self.assign_values(tokens, ALLOWED_REAL_RATES)
         self.dict['agg']  = self.assign_values(tokens, ALLOWED_AGGREGATORS)
         if self.dict['rate'] and self.dict['agg']:
-            raise ValueError("Cannot combine rate and aggregation.")
+            raise InvalidUsage("Cannot combine rate and aggregation.")
         # 4. find unit name, if present
         if tokens:
             self.dict['unit'] = tokens[0]
@@ -141,7 +141,7 @@ class InnerPath:
             tokens.pop(tokens.index(x))
             return x            
         else:
-            raise ValueError(values_found)
+            raise InvalidUsage(values_found)
             
             
 class InvalidUsage(Exception):
@@ -178,10 +178,10 @@ class CustomGET:
 
     @staticmethod
     def make_dates(ip: dict):
-        return {key:ip[key] for key in ['start_date', 'end_date'] if ip[key]}           
+        return {key:ip[key] for key in ['start_date', 'end_date'] if ip.get(key)}
     
     def __init__(self, domain, varname, freq, inner_path):
-        ip = InnerPath(inner_path).get_dict()        
+        ip = InnerPath(inner_path).get_dict()
         self.params = dict(name=self.make_name(varname, ip['unit']),
                            freq=self.make_freq(freq))
         self.params.update(self.make_dates(ip))
